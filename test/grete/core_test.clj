@@ -9,9 +9,9 @@
         config   {:group-id "group" :topics ["topic"]}
         error    (ex-info "failure" {})
         received (atom nil)]
-    (with-redefs [core/poll                  (fn [_ _] (throw error))
-                  gregor/close               (fn [_] (reset! running? false))
-                  gregor/commit-offsets!     (fn [& _] nil)]
+    (with-redefs [core/poll              (fn [_ _] (throw error))
+                  gregor/close           (fn [_] (reset! running? false))
+                  gregor/commit-offsets! (fn [& _] nil)]
       (core/consume consumer
                     (fn [& _] nil)
                     running?
