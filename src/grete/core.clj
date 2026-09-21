@@ -72,33 +72,50 @@
   (->> (edn-to-consumer conf)
        (apply gregor/consumer)))
 
+(defn default-on-error
+  [{:keys [error]}]
+  (log/error "kafka: could not consume a message" error))
+
 (defn consume
   "the 'process' function will take 'org.apache.kafka.clients.consumer.ConsumerRecords'
    which can be turns to a seq of maps with 'consumer-records->maps'"
-  [consumer process running? ms n]
-  (log/info "starting" (inc n) "consumer")
-  (while @running?
-    (try
-      (let [consumer-records (poll consumer ms)]
-        (when consumer-records
-          (process consumer consumer-records)
-          (gregor/commit-offsets! consumer)))
-      (catch Throwable t
-        (log/error "kafka: could not consume a message" t))))
-  (gregor/close consumer))
+  ([consumer process running? ms n]
+   (consume consumer process running? ms n {}))
+  ([consumer process running? ms n {:keys [conf on-error]
+                                    :or   {conf     {}
+                                           on-error default-on-error}}]
+   (log/info "starting" (inc n) "consumer")
+   (while @running?
+     (try
+       (let [consumer-records (poll consumer ms)]
+         (when consumer-records
+           (process consumer consumer-records)
+           (gregor/commit-offsets! consumer)))
+       (catch Throwable error
+         (try
+           (on-error {:consumer consumer
+                      :conf     conf
+                      :error    error})
+           (catch Throwable callback-error
+             (log/error "kafka: consumer error handler failed" callback-error))))))
+   (gregor/close consumer)))
 
-(defn run-consumers [process {:keys [threads poll-ms] :as conf}]
-  (let [running? (atom true)
-        pool (sch/new-executor "kafka consumers" (if (number? threads)
-                                                   threads
-                                                   42))]
-    (dotimes [t threads]
-      (let [c (consumer (dissoc conf :threads :poll-ms))]
-        (log/info "subscribing to:" (gregor/subscription c))
-        (.submit pool #(consume c process running? poll-ms t))))
-    (log/info "started" threads "consumers ->"
-              (t/cloak-secrets conf))
-    {:pool pool :running? running?}))
+(defn run-consumers
+  ([process conf]
+   (run-consumers process conf {}))
+  ([process {:keys [threads poll-ms] :as conf} options]
+   (let [running? (atom true)
+         pool (sch/new-executor "kafka consumers" (if (number? threads)
+                                                    threads
+                                                    42))]
+     (dotimes [t threads]
+       (let [c (consumer (dissoc conf :threads :poll-ms))]
+         (log/info "subscribing to:" (gregor/subscription c))
+         (.submit pool #(consume c process running? poll-ms t
+                                 (assoc options :conf conf)))))
+     (log/info "started" threads "consumers ->"
+               (t/cloak-secrets conf))
+     {:pool pool :running? running?})))
 
 (defn stop-consumers [{:keys [pool running?]}]
   (reset! running? false)

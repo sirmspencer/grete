@@ -305,6 +305,12 @@
   [^Consumer consumer]
   (set (.subscription consumer)))
 
+(defn consumer-error-info
+  "Return standard diagnostic information for a consumer error."
+  [^Consumer consumer]
+  {:topics     (subscription consumer)
+   :assignment (assignment consumer)})
+
 
 (defn unsubscribe
   "Unsubscribe from topics currently subscribed with subscribe. This also clears any
