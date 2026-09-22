@@ -309,7 +309,10 @@
   "Return standard diagnostic information for a consumer."
   [^Consumer consumer]
   {:topics     (subscription consumer)
-   :assignment (assignment consumer)})
+   :assignment (mapv (fn [^TopicPartition topic-partition]
+                       {:topic     (.topic topic-partition)
+                        :partition (.partition topic-partition)})
+                     (assignment consumer))})
 
 
 (defn unsubscribe
