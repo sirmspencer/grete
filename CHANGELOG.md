@@ -1,3 +1,7 @@
+# 0.1.8008
+
+- add `:on-error` callback to consume (@[sirmspencer](https://github.com/sirmspencer))
+
 # 0.1.8005
 
 - [add](src/grete/streams.clj) kafka streams
