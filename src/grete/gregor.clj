@@ -305,6 +305,15 @@
   [^Consumer consumer]
   (set (.subscription consumer)))
 
+(defn consumer-intel
+  "Return standard diagnostic information for a consumer."
+  [^Consumer consumer]
+  {:topics     (subscription consumer)
+   :assignment (mapv (fn [^TopicPartition topic-partition]
+                       {:topic     (.topic topic-partition)
+                        :partition (.partition topic-partition)})
+                     (assignment consumer))})
+
 
 (defn unsubscribe
   "Unsubscribe from topics currently subscribed with subscribe. This also clears any
