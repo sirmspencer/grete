@@ -305,8 +305,8 @@
   [^Consumer consumer]
   (set (.subscription consumer)))
 
-(defn consumer-error-info
-  "Return standard diagnostic information for a consumer error."
+(defn consumer-intel
+  "Return standard diagnostic information for a consumer."
   [^Consumer consumer]
   {:topics     (subscription consumer)
    :assignment (assignment consumer)})
