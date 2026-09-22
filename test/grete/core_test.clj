@@ -8,11 +8,10 @@
         consumer (Object.)
         error    (ex-info "failure" {})
         received (atom nil)]
-    (with-redefs [core/poll              (fn [_ _] (throw error))
-                  gregor/close           (fn [_] (reset! running? false))
-                  gregor/commit-offsets! (fn [& _] nil)]
+    (with-redefs [core/poll    (fn [_ _] (throw error))
+                  gregor/close (fn [_] (reset! running? false))]
       (core/consume consumer
-                    (fn [& _] nil)
+                    (fn [& _] :processed)
                      running?
                      0
                      0
@@ -21,8 +20,29 @@
                                   (reset! running? false))}))
     (is (= {:consumer        consumer
             :consumer-number 0
+            :phase           :poll
             :error           error}
            @received))))
+
+(deftest phase-handlers-receive-phase-context
+  (let [running? (atom true)
+        commit-error  (ex-info "commit failure" {})
+        received      (atom [])
+        consumer      (Object.)]
+    (with-redefs [core/poll              (fn [_ _] (Object.))
+                  gregor/close           (fn [_] (reset! running? false))
+                  gregor/commit-offsets! (fn [& _] (throw commit-error))]
+      (core/consume consumer
+                    (fn [& _] :processed)
+                    running?
+                    0
+                    7
+                    {:on-commit-error  (fn [context]
+                                         (swap! received conj (assoc context :test :commit))
+                                         (reset! running? false))}))
+    (is (= :commit (:test (first @received))))
+    (is (= commit-error (:error (first @received))))
+    (is (= :processed (:process-result (first @received))))))
 
 (deftest nil-on-error-uses-default-handler
   (let [running? (atom true)
@@ -32,8 +52,7 @@
                   core/default-on-error (fn [context]
                                           (reset! received context)
                                           (reset! running? false))
-                  gregor/close           (fn [_] nil)
-                  gregor/commit-offsets! (fn [& _] nil)]
+                  gregor/close           (fn [_] nil)]
       (core/consume (Object.)
                     (fn [& _] nil)
                     running?
@@ -41,20 +60,20 @@
                     7
                     {:on-error nil}))
     (is (= 7 (:consumer-number @received)))
+    (is (= :poll (:phase @received)))
     (is (= error (:error @received)))))
 
 (deftest on-error-failure-does-not-prevent-consumer-close
   (let [running? (atom true)
         closed?  (atom false)]
     (with-redefs [core/poll              (fn [_ _] (throw (ex-info "failure" {})))
-                  gregor/close           (fn [_] (reset! closed? true))
-                  gregor/commit-offsets! (fn [& _] nil)]
+                  gregor/close           (fn [_] (reset! closed? true))]
       (core/consume (Object.)
                     (fn [& _] nil)
                     running?
                     0
-                    0
-                    {:on-error (fn [_]
-                                 (reset! running? false)
+                     0
+                     {:on-error (fn [_]
+                                  (reset! running? false)
                                  (throw (ex-info "handler failure" {})))}))
     (is (true? @closed?))))
