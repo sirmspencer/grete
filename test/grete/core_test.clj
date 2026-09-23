@@ -12,12 +12,12 @@
                   gregor/close (fn [_] (reset! running? false))]
       (core/consume consumer
                     (fn [& _] :processed)
-                     running?
-                     0
-                     0
-                     {:on-error (fn [context]
-                                  (reset! received context)
-                                  (reset! running? false))}))
+                    running?
+                    0
+                    0
+                    {:on-error (fn [context]
+                                 (reset! received context)
+                                 (reset! running? false))}))
     (is (= {:consumer        consumer
             :consumer-number 0
             :phase           :poll
@@ -42,7 +42,72 @@
                                          (reset! running? false))}))
     (is (= :commit (:test (first @received))))
     (is (= commit-error (:error (first @received))))
-    (is (= :processed (:process-result (first @received))))))
+    (is (= :processed (:result (first @received))))))
+
+(deftest poll-handler-takes-precedence
+  (let [running? (atom true)
+        received (atom [])
+        error    (ex-info "poll failure" {})]
+    (with-redefs [core/poll    (fn [_ _] (throw error))
+                  gregor/close (fn [_] nil)]
+      (core/consume (Object.)
+                    (fn [& _] (swap! received conj :process))
+                    running?
+                    0
+                    0
+                    {:on-error      (fn [_] (swap! received conj :generic))
+                     :on-poll-error (fn [context]
+                                      (swap! received conj [:poll (:phase context)])
+                                      (reset! running? false))}))
+    (is (= [[:poll :poll]] @received))))
+
+(deftest commit-handler-takes-precedence
+  (let [running? (atom true)
+        received (atom [])
+        error    (ex-info "commit failure" {})]
+    (with-redefs [core/poll              (fn [_ _] (Object.))
+                  gregor/close           (fn [_] nil)
+                  gregor/commit-offsets! (fn [& _] (throw error))]
+      (core/consume (Object.)
+                    (fn [& _] :processed)
+                    running?
+                    0
+                    0
+                    {:on-error        (fn [_] (swap! received conj :generic))
+                     :on-commit-error (fn [context]
+                                        (swap! received conj [:commit (:phase context)])
+                                        (reset! running? false))}))
+    (is (= [[:commit :commit]] @received))))
+
+(deftest nil-process-result-still-commits
+  (let [running? (atom true)
+        committed? (atom false)]
+    (with-redefs [core/poll              (fn [_ _] (Object.))
+                  gregor/close           (fn [_] (reset! running? false))
+                  gregor/commit-offsets! (fn [& _]
+                                           (reset! committed? true)
+                                           (reset! running? false))]
+      (core/consume (Object.)
+                    (fn [& _] nil)
+                    running?
+                    0
+                    0
+                    {}))
+    (is (true? @committed?))))
+
+(deftest process-failure-does-not-commit
+  (let [running?  (atom true)
+        committed? (atom false)]
+    (with-redefs [core/poll              (fn [_ _] (Object.))
+                  gregor/close           (fn [_] nil)
+                  gregor/commit-offsets! (fn [& _] (reset! committed? true))]
+      (core/consume (Object.)
+                    (fn [& _] (throw (ex-info "process failure" {})))
+                    running?
+                    0
+                    0
+                    {:on-process-error (fn [_] (reset! running? false))}))
+    (is (false? @committed?))))
 
 (deftest nil-on-error-uses-default-handler
   (let [running? (atom true)
@@ -72,8 +137,8 @@
                     (fn [& _] nil)
                     running?
                     0
-                     0
-                     {:on-error (fn [_]
-                                  (reset! running? false)
+                    0
+                    {:on-error (fn [_]
+                                 (reset! running? false)
                                  (throw (ex-info "handler failure" {})))}))
     (is (true? @closed?))))
