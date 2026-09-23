@@ -79,8 +79,6 @@
              "phase:"
              (or phase :unknown)))
 
-(def ^:private process-failed ::process-failed)
-
 (defn- report-error
   [handler context]
   (try
@@ -105,7 +103,7 @@
                      :consumer-number n
                      :phase           :poll
                      :error           error})
-      nil)))
+      :poll-failed)))
 
 (defn- process-records
   [consumer process consumer-records n on-process-error]
@@ -117,7 +115,7 @@
                      :consumer-number n
                      :phase           :process
                      :error           error})
-      process-failed)))
+      :process-failed)))
 
 (defn- commit-records
   [consumer process-result n on-commit-error]
@@ -128,15 +126,16 @@
                     {:consumer        consumer
                      :consumer-number n
                      :phase           :commit
-                                  :result          process-result
+                     :result          process-result
                      :error           error}))))
 
 (defn- consume-once
   [consumer process ms n {:keys [on-poll-error on-process-error on-commit-error]}]
-  (when-let [consumer-records (poll-records consumer ms n on-poll-error)]
-    (let [process-result (process-records consumer process consumer-records n on-process-error)]
-      (when-not (= process-failed process-result)
-        (commit-records consumer process-result n on-commit-error)))))
+  (let [consumer-records (poll-records consumer ms n on-poll-error)]
+    (when-not (= :poll-failed consumer-records)
+      (let [process-result (process-records consumer process consumer-records n on-process-error)]
+        (when-not (= :process-failed process-result)
+          (commit-records consumer process-result n on-commit-error))))))
 
 (defn consume
   "the 'process' function will take 'org.apache.kafka.clients.consumer.ConsumerRecords'
